@@ -16,8 +16,7 @@ taskflow-assessment/
 
 ## Section A — Python/Django Backend
 
-### Stack
-Python 3.11, Django 5.1, Django REST Framework 3.17, django-filter, psycopg (v3), PostgreSQL
+**Stack:** Python 3.11, Django 5.1, Django REST Framework 3.17, django-filter, psycopg v3, PostgreSQL
 
 ### Setup
 
@@ -25,18 +24,11 @@ Python 3.11, Django 5.1, Django REST Framework 3.17, django-filter, psycopg (v3)
 cd backend
 python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
-
-# Create the database (PostgreSQL must be running)
 createdb taskflow
-
-# Run migrations
 python manage.py migrate
-
-# Seed with 50 projects + 200 tasks
-python manage.py seed_db
-
-# Start dev server
+python manage.py seed_db   # seeds 50 projects + 200 tasks
 python manage.py runserver
+python manage.py test projects --verbosity=2   # 14 tests, all pass
 ```
 
 ### API Endpoints
@@ -51,20 +43,6 @@ python manage.py runserver
 
 **Task query filters:** `?project=<id>`, `?priority=<1-4>`, `?is_complete=true|false`  
 **Ordering:** `?ordering=priority`, `?ordering=-due_date`, etc.
-
-```bash
-# Examples
-curl http://localhost:8001/api/projects/
-curl "http://localhost:8001/api/tasks/?priority=3&is_complete=false"
-curl http://localhost:8001/api/projects/1/summary/
-```
-
-### Run Tests
-
-```bash
-python manage.py test projects --verbosity=2
-# 14 tests — all pass
-```
 
 ---
 
@@ -103,7 +81,7 @@ class TaskSerializer(serializers.ModelSerializer):
     # Result: IntegrityError (500) instead of a clean ValidationError (400)
 ```
 
-**Root cause:** DRF's default `PrimaryKeyRelatedField` validates that the FK value is a valid integer but does NOT verify the referenced row exists when called from certain code paths. Without an explicit validator, an invalid project ID reaches `bulk_create` / `save()` and PostgreSQL raises an IntegrityError, which Django surfaces as a 500.
+**Root cause:** DRF's default `PrimaryKeyRelatedField` validates that the FK value is a valid integer but does NOT verify the referenced row exists. Without an explicit validator, an invalid project ID reaches `save()` and PostgreSQL raises an IntegrityError, which Django surfaces as a 500.
 
 **Fix:** Add `validate_project()` in the serializer that queries the DB before accepting the value, returning a clean 400 with a human-readable message.
 
@@ -147,50 +125,37 @@ Project.objects.annotate(
 |---|---|---|
 | Mechanism | SQL JOIN | Separate query + Python join |
 | Use when | FK or OneToOne (single related object) | ManyToMany or reverse FK (many related objects) |
-| Our case | `Task → Project` is a FK | Use `select_related('project')` |
+| Our case | `Task → Project` is a FK | → use `select_related('project')` |
 
-`TaskViewSet.get_queryset()` uses `select_related('project')` — accessing `task.project.name` in a loop over 200 tasks costs 1 query total, not 201.
+`TaskViewSet.get_queryset()` uses `select_related('project')` — accessing `task.project.name` across 200 tasks costs 1 query total, not 201.
 
 ---
 
 ### Task 5 — Seed Command Prompt (Score: 5/5)
 
-See the docstring at the top of `backend/projects/management/commands/seed_db.py` for the full prompt. Key elements that earn a 5:
+Full prompt is in the docstring at the top of `backend/projects/management/commands/seed_db.py`. Key elements:
 - Exact counts (50 projects, 200 tasks)
-- `transaction.atomic` requirement stated explicitly
+- `transaction.atomic` stated explicitly for safe rollback on error
 - Idempotency (delete before insert) specified
 - Data variety: `status` distribution, `priority` 1–4, due dates spanning -30 to +90 days, 30% completion rate
-- Performance: `bulk_create` for both models
-- Error handling via atomic transaction
-- No third-party packages (stdlib `random` + `datetime` only)
+- `bulk_create` for both models to minimise DB round-trips
+- No third-party packages — stdlib `random` + `datetime` only
 - Output confirmation line specified
 
 ---
 
 ## Section B — React/Vite Frontend
 
-### Stack
-React 19, Vite 8, TypeScript strict, TailwindCSS v3.4 (pinned — avoids v4 breaking config changes), React Router v7, React Query v5, msw v2, Vitest + React Testing Library
+**Stack:** React 19, Vite 8, TypeScript, TailwindCSS v3.4, React Router v7, React Query v5, MSW v2, Vitest + React Testing Library
 
 ### Setup
 
 ```bash
 cd frontend
 npm install
-npm run dev   # starts on http://localhost:5173
-```
-
-### Run Tests
-
-```bash
-npm test
-# 18 tests — all pass
-```
-
-### Build
-
-```bash
-npm run build  # TypeScript check + Vite bundle
+npm run dev          # http://localhost:5173
+npm test             # 18 tests, all pass
+npm run build        # TypeScript check + Vite bundle
 ```
 
 ---
@@ -199,9 +164,7 @@ npm run build  # TypeScript check + Vite bundle
 
 ### Task 1 — Setup
 
-**Tailwind version decision:** Pinned `tailwindcss@^3.4` deliberately. Tailwind v4 (the default in 2026) uses a completely different setup (Vite plugin + `@import "tailwindcss"`, no `tailwind.config.js` or `@tailwind` directives). AI tools frequently mix v3 and v4 syntax — pinning v3 ensures consistent config across all environments.
-
-**Verification step:** Added a styled element and confirmed it rendered with the correct colour before building any components.
+**Tailwind version decision:** Pinned `tailwindcss@^3.4` deliberately. Tailwind v4 (the npm default in 2026) uses a completely different setup — Vite plugin + `@import "tailwindcss"`, no `tailwind.config.js` or `@tailwind` directives. AI tools frequently mix v3 and v4 syntax, causing styles to silently not apply. Pinning v3 avoids that trap.
 
 ---
 
@@ -217,7 +180,7 @@ npm run build  # TypeScript check + Vite bundle
 | Background refetch, dedup | Built-in | Manual |
 | Global UI state (modals, filters) | Not intended for | Ideal |
 
-**Decision rationale:** All state in this app is server state — projects and tasks that need fetching, caching, and mutations. React Query is the right tool. Zustand would be appropriate if there were significant client-only shared state (e.g., a complex multi-step form wizard, user preferences that don't round-trip to a server). I installed Zustand as a dependency to show awareness of it, but did not use it for server state.
+**Decision rationale:** All state in this app is server state — projects and tasks that need fetching, caching, and mutations. React Query is the right tool. Zustand would be appropriate for significant client-only shared state (multi-step form wizards, user preferences that don't round-trip to a server). Zustand is installed to show awareness of it, but not used for server state.
 
 ---
 
@@ -232,9 +195,9 @@ useEffect(() => {
 }); // ← no dependency array
 ```
 
-**Root cause:** Without `[]`, the effect runs after *every render*. `setProjects` triggers a re-render → the effect runs again → infinite loop. The network tab shows hundreds of identical requests per second.
+**Root cause:** Without `[]`, the effect runs after every render. `setProjects` triggers a re-render → the effect runs again → infinite loop. The network tab shows hundreds of identical requests per second.
 
-**Fix:** Add `[]` (or use React Query, which eliminates `useEffect` for data fetching entirely).
+**Fix:** Add `[]`, or use React Query — which eliminates `useEffect` for data fetching entirely.
 
 **Catching test:** `test_fetches_projects_exactly_once_on_mount` — spies on `fetchProjects` and asserts it was called exactly once after mount.
 
@@ -244,36 +207,25 @@ useEffect(() => {
 
 **Buggy pattern:**
 ```tsx
-const filtered = projects.filter(...);  // ← correct, returns new array
-// BUT common mistake:
-projects.sort((a, b) => ...);  // ← mutates in-place, React doesn't re-render
-setProjects(projects);          // same reference → no update
+projects.sort((a, b) => ...);  // ← mutates in-place
+setProjects(projects);          // same reference → React sees no change, no re-render
 ```
 
 **Root cause:** React uses reference equality to decide whether to re-render. Mutating the array and calling `setState` with the same reference does nothing.
 
-**Fix:** Always return a new array: `[...projects].sort(...)` or `.filter(...)` (filter already returns a new array — the bug is most common with sort/splice/push).
+**Fix:** Always return a new array — `[...projects].sort(...)` or `.filter(...)`.
 
-**Catching test:** `test_filters_projects_by_status_without_mutating` — filters to `active`, then switches back to `All`, and asserts the full count is restored (proves the original array was not mutated).
+**Catching test:** `test_filters_projects_by_status_without_mutating` — filters to `active`, switches back to `All`, asserts the full count is restored (proves the original array was not mutated).
 
 ---
 
 ### Task 5 — Modal Prompt (Score: 5/5)
 
-See the docstring at the top of `frontend/src/components/Modal.tsx` for the full prompt. Key elements:
+Full prompt is in the docstring at the top of `frontend/src/components/Modal.tsx`. Key elements:
 - Typed props (isOpen, onClose, title, children, footer slot) listed explicitly
-- Focus trap specification: Tab/Shift+Tab cycle, initial focus on first focusable element, restore focus on close
+- Focus trap: Tab/Shift+Tab cycle within modal, initial focus on first focusable element, restore focus on close
 - Escape key closes
-- Overlay click closes, panel click does not propagate
-- CSS transition animation specified (opacity + translate-y, Tailwind classes)
+- Overlay click closes; panel click does not propagate
+- CSS transition animation via Tailwind classes
 - No third-party focus-trap library — native implementation with refs
 - Clean unmount when `isOpen` is false
-
----
-
-## AI Tool Usage Notes
-
-- **Model used:** Claude Opus 4.8 via Claude Code CLI
-- **Approach:** Specific prompts first (field types, constraints, library versions) — never vague ("create a model"). Reviewed all generated code before running it.
-- **Validation pattern:** After every generated block: read the code, identify potential issues, run tests/curl, iterate.
-- **Key corrections made:** Identified Tailwind v4 trap and pinned v3; fixed `icontains` on IntegerField by switching to `NumberFilter`; caught missing FK validation before it caused a 500 in production.
