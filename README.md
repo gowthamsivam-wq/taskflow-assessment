@@ -27,7 +27,7 @@ pip install -r requirements.txt
 createdb taskflow
 python manage.py migrate
 python manage.py seed_db        # seeds 50 projects + 200 tasks
-python manage.py runserver
+python manage.py runserver 8001
 python manage.py test projects  # 14 tests, all pass
 ```
 
