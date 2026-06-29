@@ -37,6 +37,11 @@ class Task(models.Model):
 
     class Meta:
         ordering = ['-priority', 'due_date']
+        indexes = [
+            models.Index(fields=['project', 'is_complete'], name='task_project_complete_idx'),
+            models.Index(fields=['priority'], name='task_priority_idx'),
+            models.Index(fields=['due_date'], name='task_due_date_idx'),
+        ]
 
     def __str__(self):
         return self.title

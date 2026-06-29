@@ -11,6 +11,7 @@ export interface Project {
   updated_at: string;
   task_count: number;
   completed_task_count: number;
+  latest_due: string | null;
 }
 
 export interface Task {

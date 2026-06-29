@@ -141,6 +141,26 @@ One query regardless of how many projects exist. The raw SQL equivalent uses Pos
 
 `TaskViewSet.get_queryset()` uses `select_related('project')` — accessing `task.project.name` across all tasks costs 1 query, not N+1.
 
+**Database indexes — `Task` model `Meta.indexes`:**
+
+```python
+class Meta:
+    indexes = [
+        models.Index(fields=['project', 'is_complete'], name='task_project_complete_idx'),
+        models.Index(fields=['priority'],               name='task_priority_idx'),
+        models.Index(fields=['due_date'],               name='task_due_date_idx'),
+    ]
+```
+
+Rationale:
+- `(project_id, is_complete)` composite — the `completed_task_count` annotation filters `WHERE project_id = X AND is_complete = true`; the composite index satisfies both predicates in one B-tree scan.
+- `priority` — `TaskFilter` queries `WHERE priority = N`; without an index PostgreSQL does a full table scan on the tasks table.
+- `due_date` — default ordering is `ORDER BY due_date`; the index turns this into an index scan instead of a sort.
+- `project_id` (FK) — Django adds this automatically for every ForeignKey field, so it's already covered.
+
+Query plan verification prompt used with AI:
+> "Given this Django model and query, show me the EXPLAIN ANALYZE output and identify any missing indexes. Then generate the `Meta.indexes` definition to cover the three most common filter and ordering patterns."
+
 ---
 
 ### Task 5 — Seed Command Prompt
@@ -180,7 +200,9 @@ Copy `frontend/.env.example` to `frontend/.env.local` to point at a real backend
 
 **Tailwind version decision:** Pinned `tailwindcss@^3.4` deliberately. Tailwind v4 (the npm default in 2026) uses a completely different setup — Vite plugin + `@import "tailwindcss"`, no `tailwind.config.js` or `@tailwind` directives. AI tools frequently mix v3 and v4 syntax, causing styles to silently not apply. Pinning v3 avoids that trap entirely.
 
-**TypeScript strict mode:** `"strict": true` is set in `tsconfig.app.json`. The production build is clean with no type errors under strict.
+**TypeScript strict mode:** `"strict": true` is set in `tsconfig.app.json`. The production build is clean with no type errors under strict. Additional strictness flags active: `noUnusedLocals`, `noUnusedParameters`, `noFallthroughCasesInSwitch`.
+
+**Linter — oxlint instead of ESLint:** The project uses `oxlint` (Rust-based, ~50–100× faster than ESLint) rather than the traditional ESLint + plugin setup. Both enforce the same code-quality rules; oxlint requires zero config for a TypeScript/React project and integrates with the same `npm run lint` contract. The trade-off: ESLint has a larger plugin ecosystem (e.g. eslint-plugin-react-hooks) — if hook-specific rules become a priority, an ESLint layer can be added alongside oxlint without removing it.
 
 **Path aliases:** `@/` is configured in both `vite.config.ts` (Vite `resolve.alias`) and `tsconfig.app.json` (`paths`), so all internal imports use `@/components/...`, `@/pages/...`, etc. rather than brittle relative paths.
 

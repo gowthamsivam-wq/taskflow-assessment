@@ -12,6 +12,7 @@ const base: Project = {
   updated_at: '2026-06-01T00:00:00Z',
   task_count: 10,
   completed_task_count: 4,
+  latest_due: '2026-07-31',
 };
 
 describe('ProjectCard', () => {
