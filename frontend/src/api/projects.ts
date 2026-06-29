@@ -1,4 +1,4 @@
-import type { PaginatedResponse, Project, ProjectSummary, Task } from '../types';
+import type { PaginatedResponse, Project, ProjectSummary, Task } from '@/types';
 import client from './client';
 
 export const fetchProjects = (params?: Record<string, string>) =>

@@ -1,4 +1,4 @@
-import type { Project, Task } from '../types';
+import type { Project, Task } from '@/types';
 
 export const mockProjects: Project[] = [
   { id: 1, name: 'Customer Portal Redesign', description: 'Redesign the customer portal.', status: 'active', created_at: '2026-01-10T10:00:00Z', updated_at: '2026-06-01T10:00:00Z', task_count: 8, completed_task_count: 5 },

@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
-import { useFilterStore } from '../store/filterStore';
-import type { Project } from '../types';
+import { useFilterStore } from '@/store/filterStore';
+import type { Project } from '@/types';
 
 export function useProjectFilters(projects: Project[]): Project[] {
   const { status, search } = useFilterStore();

@@ -1,6 +1,6 @@
 import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { fetchProject, fetchProjectSummary } from '../api/projects';
+import { fetchProject, fetchProjectSummary } from '@/api/projects';
 
 export default function ProjectDetail() {
   const { id } = useParams<{ id: string }>();

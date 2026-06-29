@@ -1,4 +1,4 @@
-import type { Project, ProjectStatus } from '../types';
+import type { Project, ProjectStatus } from '@/types';
 
 interface ProjectCardProps {
   project: Project;

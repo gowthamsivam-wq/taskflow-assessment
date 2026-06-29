@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { ProjectStatus } from '../types';
+import type { ProjectStatus } from '@/types';
 
 interface FilterState {
   status: ProjectStatus | 'all';

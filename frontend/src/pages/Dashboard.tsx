@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { fetchProjects, fetchTasks, updateTask } from '../api/projects';
-import { useFilterStore } from '../store/filterStore';
-import { useProjectFilters } from '../hooks/useProjectFilters';
-import ProjectCard from '../components/ProjectCard';
-import ProjectCardSkeleton from '../components/ProjectCardSkeleton';
-import Modal from '../components/Modal';
-import type { ProjectStatus, Task } from '../types';
+import { fetchProjects, fetchTasks, updateTask } from '@/api/projects';
+import { useFilterStore } from '@/store/filterStore';
+import { useProjectFilters } from '@/hooks/useProjectFilters';
+import ProjectCard from '@/components/ProjectCard';
+import ProjectCardSkeleton from '@/components/ProjectCardSkeleton';
+import Modal from '@/components/Modal';
+import type { ProjectStatus, Task } from '@/types';
 
 const STATUS_FILTERS: { label: string; value: ProjectStatus | 'all' }[] = [
   { label: 'All', value: 'all' },

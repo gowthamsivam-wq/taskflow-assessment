@@ -1,6 +1,6 @@
 import { http, HttpResponse } from 'msw';
 import { mockProjects, mockTasks } from './data';
-import type { Task } from '../types';
+import type { Task } from '@/types';
 
 const BASE = 'http://localhost:8001/api';
 

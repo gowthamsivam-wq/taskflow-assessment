@@ -62,10 +62,13 @@ Copy `backend/.env.example` to `backend/.env` and fill in values for non-local e
 ### Task 2 — REST API
 
 **Design decisions:**
-- `ProjectViewSet.get_queryset()` uses two `annotate` calls — `task_count` and `completed_task_count` — so the serializer exposes real completion data without any extra queries or N+1.
+- `ProjectViewSet.get_queryset()` annotates `task_count`, `completed_task_count`, and `latest_due` — all three in a single query, no extra round-trips.
+- `TaskSerializer` deliberately returns `project` as a flat ID (not a nested object). Nesting the full `ProjectSerializer` would waste bandwidth on list endpoints where only the ID is needed; callers that need project detail hit `/api/projects/{id}/` directly. The `priority_display` field uses `source='get_priority_display'` to surface the human-readable label alongside the integer value without a separate query.
 - `TaskFilter` uses `django_filters.NumberFilter` for `priority` (exact integer match) — not `CharFilter` or `icontains`.
 - `@action(detail=True, url_path='summary')` on `ProjectViewSet` handles `GET /api/projects/{id}/summary/` cleanly without a standalone view.
 - Page size 20 and ordering support set globally in `REST_FRAMEWORK`.
+
+**Endpoints verified after generation** using the DRF browseable API at `http://localhost:8001/api/` and curl spot-checks for the filter combinations (`?priority=3&is_complete=false`) and the `/summary/` action.
 
 ---
 
@@ -106,25 +109,27 @@ class TaskFilter(django_filters.FilterSet):
 
 ### Task 4 — ORM Optimization
 
-**`annotate` query — both aggregates in a single round-trip:**
+**`annotate` query — all three aggregates in a single round-trip:**
 ```python
 Project.objects.annotate(
     task_count=Count('tasks'),
     completed_task_count=Count('tasks', filter=Q(tasks__is_complete=True)),
+    latest_due=Max('tasks__due_date'),
 )
 ```
 
 Generated SQL:
 ```sql
 SELECT projects.*,
-       COUNT(tasks.id)                                        AS task_count,
-       COUNT(tasks.id) FILTER (WHERE tasks.is_complete = true) AS completed_task_count
+       COUNT(tasks.id)                                          AS task_count,
+       COUNT(tasks.id) FILTER (WHERE tasks.is_complete = true) AS completed_task_count,
+       MAX(tasks.due_date)                                      AS latest_due
 FROM   projects
 LEFT JOIN tasks ON tasks.project_id = projects.id
 GROUP  BY projects.id;
 ```
 
-One query regardless of how many projects exist. The raw SQL equivalent uses PostgreSQL's `FILTER (WHERE ...)` aggregate syntax, which is semantically identical to Django's `Count(..., filter=Q(...))` — no subquery, no correlated scan.
+One query regardless of how many projects exist. The raw SQL equivalent uses PostgreSQL's `FILTER (WHERE ...)` aggregate syntax, which is semantically identical to Django's `Count(..., filter=Q(...))` — no subquery, no correlated scan. Key difference from a hand-written subquery: the ORM produces a single `GROUP BY` pass; a naive subquery approach would hit the tasks table once per project.
 
 **`select_related` vs `prefetch_related`:**
 
@@ -176,6 +181,8 @@ Copy `frontend/.env.example` to `frontend/.env.local` to point at a real backend
 **Tailwind version decision:** Pinned `tailwindcss@^3.4` deliberately. Tailwind v4 (the npm default in 2026) uses a completely different setup — Vite plugin + `@import "tailwindcss"`, no `tailwind.config.js` or `@tailwind` directives. AI tools frequently mix v3 and v4 syntax, causing styles to silently not apply. Pinning v3 avoids that trap entirely.
 
 **TypeScript strict mode:** `"strict": true` is set in `tsconfig.app.json`. The production build is clean with no type errors under strict.
+
+**Path aliases:** `@/` is configured in both `vite.config.ts` (Vite `resolve.alias`) and `tsconfig.app.json` (`paths`), so all internal imports use `@/components/...`, `@/pages/...`, etc. rather than brittle relative paths.
 
 ---
 
@@ -229,9 +236,14 @@ setProjects(projects);          // same reference → React sees no change, no r
 
 ### Task 4 — API Integration & Error Handling
 
+**API client prompt** (`src/api/client.ts`):
+> "Create a reusable Axios instance for a REST API with base URL from `import.meta.env.VITE_API_URL`. Add two interceptors: (1) a request interceptor that reads an auth token from localStorage and attaches it as `Authorization: Bearer <token>` on every request, (2) a response interceptor that clears the stored token and redirects to login on 401, and normalises all other error responses to a consistent rejection shape so callers never need to inspect AxiosError internals. Token refresh is out of scope for this sprint but the interceptor should be structured so a refresh call can be inserted before the 401 redirect without restructuring the file."
+
 **API client** (`src/api/client.ts`): Axios instance with two interceptors:
 - **Request interceptor** — attaches `Authorization: Bearer <token>` from `localStorage` when present.
-- **Response interceptor** — clears the stored token on 401 so stale credentials don't loop; normalises all errors to a single rejection shape so callers don't inspect `AxiosError` internals.
+- **Response interceptor** — clears the stored token on 401 (preventing stale-credential loops); structured so a token-refresh call can be added before the redirect without rewiring the interceptor chain.
+
+**Error Boundary** (`src/components/ErrorBoundary.tsx`): React class component wrapping the entire route tree (and `ProjectDetail` individually). Catches uncaught render errors, logs them to the console, and shows a "Something went wrong / Try again" fallback with a reset button. React Query's `isError` handles expected fetch failures inline; the `ErrorBoundary` is a safety net for unexpected JS exceptions.
 
 **Loading / error / empty states** in `Dashboard.tsx`:
 - **Loading** — six `ProjectCardSkeleton` pulse-animated cards render while the query is pending.
