@@ -2,8 +2,17 @@
 export default {
   content: ['./index.html', './src/**/*.{ts,tsx}'],
   theme: {
-    extend: {},
+    extend: {
+      keyframes: {
+        fadeSlideIn: {
+          '0%':   { opacity: '0', transform: 'translateY(-8px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
+      },
+      animation: {
+        fadeSlideIn: 'fadeSlideIn 150ms ease-out',
+      },
+    },
   },
   plugins: [],
 }
-
