@@ -1,4 +1,4 @@
-from django.db.models import Count, Max, Q
+from django.db.models import Count, Max, Q, ExpressionWrapper, FloatField
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -14,7 +14,10 @@ class ProjectViewSet(viewsets.ModelViewSet):
     ordering = ['-created_at']
 
     def get_queryset(self):
-        return Project.objects.annotate(task_count=Count('tasks'))
+        return Project.objects.annotate(
+            task_count=Count('tasks'),
+            completed_task_count=Count('tasks', filter=Q(tasks__is_complete=True)),
+        )
 
     @action(detail=True, methods=['get'], url_path='summary')
     def summary(self, request, pk=None):

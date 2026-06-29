@@ -19,8 +19,10 @@ const STATUS_LABEL: Record<ProjectStatus, string> = {
 };
 
 export default function ProjectCard({ project }: ProjectCardProps) {
-  const completedApprox = Math.round((project.task_count ?? 0) * 0.4);
-  const progress = project.task_count > 0 ? (completedApprox / project.task_count) * 100 : 0;
+  const progress =
+    project.task_count > 0
+      ? Math.round((project.completed_task_count / project.task_count) * 100)
+      : 0;
 
   return (
     <article className="bg-white rounded-lg border border-gray-200 p-5 shadow-sm hover:shadow-md transition-shadow flex flex-col gap-3">
@@ -38,10 +40,16 @@ export default function ProjectCard({ project }: ProjectCardProps) {
 
       <div className="space-y-1">
         <div className="flex justify-between text-xs text-gray-500">
-          <span>{project.task_count} tasks</span>
-          <span>{Math.round(progress)}% complete</span>
+          <span>{project.completed_task_count}/{project.task_count} tasks done</span>
+          <span>{progress}% complete</span>
         </div>
-        <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden" role="progressbar" aria-valuenow={Math.round(progress)} aria-valuemin={0} aria-valuemax={100}>
+        <div
+          className="h-1.5 bg-gray-100 rounded-full overflow-hidden"
+          role="progressbar"
+          aria-valuenow={progress}
+          aria-valuemin={0}
+          aria-valuemax={100}
+        >
           <div
             className="h-full bg-indigo-500 rounded-full transition-all"
             style={{ width: `${progress}%` }}

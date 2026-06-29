@@ -11,6 +11,7 @@ const base: Project = {
   created_at: '2026-01-01T00:00:00Z',
   updated_at: '2026-06-01T00:00:00Z',
   task_count: 10,
+  completed_task_count: 4,
 };
 
 describe('ProjectCard', () => {
@@ -24,19 +25,21 @@ describe('ProjectCard', () => {
     expect(screen.getByText('Active')).toBeTruthy();
   });
 
-  it('renders task count', () => {
+  it('renders completed/total task count', () => {
     render(<ProjectCard project={base} />);
-    expect(screen.getByText('10 tasks')).toBeTruthy();
+    expect(screen.getByText('4/10 tasks done')).toBeTruthy();
   });
 
-  it('renders a progress bar', () => {
+  it('renders a progress bar with correct percentage', () => {
     render(<ProjectCard project={base} />);
-    expect(screen.getByRole('progressbar')).toBeTruthy();
+    const bar = screen.getByRole('progressbar');
+    expect(bar).toBeTruthy();
+    expect(bar.getAttribute('aria-valuenow')).toBe('40');
   });
 
   it('shows 0% progress when task_count is 0', () => {
-    render(<ProjectCard project={{ ...base, task_count: 0 }} />);
-    expect(screen.getByText('0 tasks')).toBeTruthy();
+    render(<ProjectCard project={{ ...base, task_count: 0, completed_task_count: 0 }} />);
+    expect(screen.getByRole('progressbar').getAttribute('aria-valuenow')).toBe('0');
   });
 
   it('renders On Hold status correctly', () => {

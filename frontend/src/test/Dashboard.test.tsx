@@ -6,12 +6,14 @@
  *   (validated by confirming filter changes re-render the UI correctly)
  */
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { beforeEach } from 'vitest';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import Dashboard from '../pages/Dashboard';
 import * as projectsApi from '../api/projects';
+import { useFilterStore } from '../store/filterStore';
 
 function renderDashboard() {
   const queryClient = new QueryClient({
@@ -27,6 +29,8 @@ function renderDashboard() {
 }
 
 describe('Dashboard', () => {
+  // Zustand is a singleton — reset filter state before every test so tests don't bleed into each other
+  beforeEach(() => useFilterStore.getState().reset());
   // ── Bug #1: Missing dependency array in useEffect ─────────────────────────
   it('fetches projects exactly once on mount (no infinite re-render loop)', async () => {
     const spy = vi.spyOn(projectsApi, 'fetchProjects');

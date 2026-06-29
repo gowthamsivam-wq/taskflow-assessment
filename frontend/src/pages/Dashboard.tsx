@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { fetchProjects, fetchTasks, updateTask } from '../api/projects';
+import { useFilterStore } from '../store/filterStore';
+import { useProjectFilters } from '../hooks/useProjectFilters';
 import ProjectCard from '../components/ProjectCard';
 import ProjectCardSkeleton from '../components/ProjectCardSkeleton';
 import Modal from '../components/Modal';
@@ -15,8 +17,8 @@ const STATUS_FILTERS: { label: string; value: ProjectStatus | 'all' }[] = [
 ];
 
 export default function Dashboard() {
-  const [statusFilter, setStatusFilter] = useState<ProjectStatus | 'all'>('all');
-  const [search, setSearch] = useState('');
+  // Client UI state lives in Zustand — persists across navigations without re-fetching
+  const { status, search, setStatus, setSearch } = useFilterStore();
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
 
   const queryClient = useQueryClient();
@@ -31,7 +33,7 @@ export default function Dashboard() {
     queryFn: () => fetchTasks(),
   });
 
-  // Optimistic toggle for task is_complete
+  // Optimistic toggle — update the cache immediately, roll back on error
   const toggleTask = useMutation({
     mutationFn: (task: Task) => updateTask(task.id, { is_complete: !task.is_complete }),
     onMutate: async (task) => {
@@ -58,12 +60,8 @@ export default function Dashboard() {
   const projects = projectsPage?.results ?? [];
   const tasks = tasksPage?.results ?? [];
 
-  // Client-side filter — status + search
-  const filtered = projects.filter((p) => {
-    const matchesStatus = statusFilter === 'all' || p.status === statusFilter;
-    const matchesSearch = p.name.toLowerCase().includes(search.toLowerCase());
-    return matchesStatus && matchesSearch;
-  });
+  // Filtering is handled by the Zustand-backed custom hook — no derived state, no mutation risk
+  const filtered = useProjectFilters(projects);
 
   if (projectsError) {
     return (
@@ -91,9 +89,9 @@ export default function Dashboard() {
           {STATUS_FILTERS.map(({ label, value }) => (
             <button
               key={value}
-              onClick={() => setStatusFilter(value)}
+              onClick={() => setStatus(value)}
               className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                statusFilter === value
+                status === value
                   ? 'bg-indigo-600 text-white'
                   : 'bg-white border border-gray-300 text-gray-600 hover:bg-gray-50'
               }`}

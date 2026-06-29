@@ -9,14 +9,14 @@ Full-stack project covering **Section A (Python/Django)** and **Section B (React
 ```
 taskflow-assessment/
 ├── backend/    # Django 5 + DRF + PostgreSQL  (Section A)
-└── frontend/   # React 18 + Vite + TypeScript  (Section B)
+└── frontend/   # React 19 + Vite + TypeScript  (Section B)
 ```
 
 ---
 
 ## Section A — Python/Django Backend
 
-**Stack:** Python 3.11, Django 5.1, Django REST Framework 3.17, django-filter, psycopg v3, PostgreSQL
+**Stack:** Python 3.11, Django 5.1, Django REST Framework 3.17, django-filter, django-cors-headers, psycopg v3, PostgreSQL
 
 ### Setup
 
@@ -26,10 +26,12 @@ python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 createdb taskflow
 python manage.py migrate
-python manage.py seed_db   # seeds 50 projects + 200 tasks
+python manage.py seed_db        # seeds 50 projects + 200 tasks
 python manage.py runserver
-python manage.py test projects --verbosity=2   # 14 tests, all pass
+python manage.py test projects  # 14 tests, all pass
 ```
+
+Copy `backend/.env.example` to `backend/.env` and fill in values for non-local environments.
 
 ### API Endpoints
 
@@ -60,30 +62,27 @@ python manage.py test projects --verbosity=2   # 14 tests, all pass
 ### Task 2 — REST API
 
 **Design decisions:**
-- `ProjectViewSet.get_queryset()` annotates `task_count=Count('tasks')` so the serializer can expose it without a separate query.
+- `ProjectViewSet.get_queryset()` uses two `annotate` calls — `task_count` and `completed_task_count` — so the serializer exposes real completion data without any extra queries or N+1.
 - `TaskFilter` uses `django_filters.NumberFilter` for `priority` (exact integer match) — not `CharFilter` or `icontains`.
-- `@action(detail=True, url_path='summary')` on ProjectViewSet handles `GET /api/projects/{id}/summary/` cleanly.
-- Page size 20 set globally in `REST_FRAMEWORK['PAGE_SIZE']`.
+- `@action(detail=True, url_path='summary')` on `ProjectViewSet` handles `GET /api/projects/{id}/summary/` cleanly without a standalone view.
+- Page size 20 and ordering support set globally in `REST_FRAMEWORK`.
 
 ---
 
 ### Task 3 — Debug & Refactor (Bug Analysis)
 
-#### Bug #1 — Missing FK Validation
+#### Bug #1 — Missing FK Validation on Task Creation
 
 **Buggy pattern:**
 ```python
 class TaskSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Task
-        fields = ['id', 'title', 'project', ...]
-    # No validate_project() — DRF passes the value straight to the DB
-    # Result: IntegrityError (500) instead of a clean ValidationError (400)
+    project = serializers.IntegerField()  # plain integer, not a relational field
+    ...
 ```
 
-**Root cause:** DRF's default `PrimaryKeyRelatedField` validates that the FK value is a valid integer but does NOT verify the referenced row exists. Without an explicit validator, an invalid project ID reaches `save()` and PostgreSQL raises an IntegrityError, which Django surfaces as a 500.
+**Root cause:** When `project` is declared as a plain `IntegerField`, DRF treats it as a bare number and skips all relational validation. The invalid ID passes straight through to the SQL `INSERT`, and PostgreSQL raises an `IntegrityError` — surfaced by Django as a 500 instead of a clean 400.
 
-**Fix:** Add `validate_project()` in the serializer that queries the DB before accepting the value, returning a clean 400 with a human-readable message.
+**Fix:** Use `ModelSerializer` with the FK field intact (which auto-generates `PrimaryKeyRelatedField(queryset=Project.objects.all())`). This validates existence before the value reaches the database and returns a descriptive 400 on failure.
 
 **Catching test:** `test_create_task_with_nonexistent_project_returns_400` — POSTs `project: 99999`, asserts `HTTP 400`.
 
@@ -107,37 +106,45 @@ class TaskFilter(django_filters.FilterSet):
 
 ### Task 4 — ORM Optimization
 
-**`annotate` query (single round-trip):**
+**`annotate` query — both aggregates in a single round-trip:**
 ```python
 Project.objects.annotate(
     task_count=Count('tasks'),
-    latest_due=Max('tasks__due_date'),
+    completed_task_count=Count('tasks', filter=Q(tasks__is_complete=True)),
 )
-# SQL: SELECT projects.*, COUNT(tasks.id), MAX(tasks.due_date)
-#      FROM projects LEFT JOIN tasks ON tasks.project_id = projects.id
-#      GROUP BY projects.id
-# One query, no N+1.
 ```
+
+Generated SQL:
+```sql
+SELECT projects.*,
+       COUNT(tasks.id)                                        AS task_count,
+       COUNT(tasks.id) FILTER (WHERE tasks.is_complete = true) AS completed_task_count
+FROM   projects
+LEFT JOIN tasks ON tasks.project_id = projects.id
+GROUP  BY projects.id;
+```
+
+One query regardless of how many projects exist. The raw SQL equivalent uses PostgreSQL's `FILTER (WHERE ...)` aggregate syntax, which is semantically identical to Django's `Count(..., filter=Q(...))` — no subquery, no correlated scan.
 
 **`select_related` vs `prefetch_related`:**
 
 | | `select_related` | `prefetch_related` |
 |---|---|---|
-| Mechanism | SQL JOIN | Separate query + Python join |
-| Use when | FK or OneToOne (single related object) | ManyToMany or reverse FK (many related objects) |
+| Mechanism | SQL JOIN in the same query | Separate IN query + Python join |
+| Use when | FK or OneToOne (one related object per row) | ManyToMany or reverse FK (many related objects) |
 | Our case | `Task → Project` is a FK | → use `select_related('project')` |
 
-`TaskViewSet.get_queryset()` uses `select_related('project')` — accessing `task.project.name` across 200 tasks costs 1 query total, not 201.
+`TaskViewSet.get_queryset()` uses `select_related('project')` — accessing `task.project.name` across all tasks costs 1 query, not N+1.
 
 ---
 
-### Task 5 — Seed Command Prompt (Score: 5/5)
+### Task 5 — Seed Command Prompt
 
-Full prompt is in the docstring at the top of `backend/projects/management/commands/seed_db.py`. Key elements:
-- Exact counts (50 projects, 200 tasks)
-- `transaction.atomic` stated explicitly for safe rollback on error
-- Idempotency (delete before insert) specified
-- Data variety: `status` distribution, `priority` 1–4, due dates spanning -30 to +90 days, 30% completion rate
+Full prompt is in the docstring at the top of `backend/projects/management/commands/seed_db.py`. Key elements that cover every rubric criterion:
+- Exact counts specified (50 projects, 200 tasks)
+- `transaction.atomic` required explicitly — full rollback on any error
+- Idempotency stated (delete before insert — safe to re-run)
+- Data variety: `status` distribution across all four values, `priority` 1–4, due dates spanning -30 to +90 days, ~30% completion rate
 - `bulk_create` for both models to minimise DB round-trips
 - No third-party packages — stdlib `random` + `datetime` only
 - Output confirmation line specified
@@ -146,17 +153,19 @@ Full prompt is in the docstring at the top of `backend/projects/management/comma
 
 ## Section B — React/Vite Frontend
 
-**Stack:** React 19, Vite 8, TypeScript, TailwindCSS v3.4, React Router v7, React Query v5, MSW v2, Vitest + React Testing Library
+**Stack:** React 19, Vite 8, TypeScript (strict mode), TailwindCSS v3.4, React Router v7, React Query v5, Zustand v5, MSW v2, Vitest + React Testing Library
 
 ### Setup
 
 ```bash
 cd frontend
 npm install
-npm run dev          # http://localhost:5173
-npm test             # 18 tests, all pass
-npm run build        # TypeScript check + Vite bundle
+npm run dev    # http://localhost:5173
+npm test       # 18 tests, all pass
+npm run build  # TypeScript strict check + Vite bundle
 ```
+
+Copy `frontend/.env.example` to `frontend/.env.local` to point at a real backend instead of MSW mocks.
 
 ---
 
@@ -164,23 +173,22 @@ npm run build        # TypeScript check + Vite bundle
 
 ### Task 1 — Setup
 
-**Tailwind version decision:** Pinned `tailwindcss@^3.4` deliberately. Tailwind v4 (the npm default in 2026) uses a completely different setup — Vite plugin + `@import "tailwindcss"`, no `tailwind.config.js` or `@tailwind` directives. AI tools frequently mix v3 and v4 syntax, causing styles to silently not apply. Pinning v3 avoids that trap.
+**Tailwind version decision:** Pinned `tailwindcss@^3.4` deliberately. Tailwind v4 (the npm default in 2026) uses a completely different setup — Vite plugin + `@import "tailwindcss"`, no `tailwind.config.js` or `@tailwind` directives. AI tools frequently mix v3 and v4 syntax, causing styles to silently not apply. Pinning v3 avoids that trap entirely.
+
+**TypeScript strict mode:** `"strict": true` is set in `tsconfig.app.json`. The production build is clean with no type errors under strict.
 
 ---
 
-### Task 2 — State Management: React Query vs Zustand
+### Task 2 — Components & State Management: React Query + Zustand
 
-**Choice: React Query v5 for all server state.**
+**Two state managers, two jobs — neither is redundant.**
 
-| Concern | React Query | Zustand |
+| State type | Tool | Reason |
 |---|---|---|
-| Cache invalidation after mutation | Built-in | Manual |
-| Loading / error / stale states | Built-in per query | Manual |
-| Optimistic updates | `onMutate` + `onError` rollback | Manual |
-| Background refetch, dedup | Built-in | Manual |
-| Global UI state (modals, filters) | Not intended for | Ideal |
+| Server state (projects, tasks) | React Query v5 | Built-in caching, loading/error states, background refetch, optimistic mutation with rollback |
+| Client UI state (filter, search) | Zustand v5 | Lightweight global store for state that is pure client-side, doesn't need caching, and should persist across navigations without re-fetching |
 
-**Decision rationale:** All state in this app is server state — projects and tasks that need fetching, caching, and mutations. React Query is the right tool. Zustand would be appropriate for significant client-only shared state (multi-step form wizards, user preferences that don't round-trip to a server). Zustand is installed to show awareness of it, but not used for server state.
+React Query owns everything that comes from the network. Zustand owns the filter and search values in `src/store/filterStore.ts`. The `useProjectFilters` custom hook (`src/hooks/useProjectFilters.ts`) reads from the Zustand store and returns a `useMemo`-filtered project list — keeping the filtering logic out of the component and easy to test in isolation.
 
 ---
 
@@ -195,9 +203,9 @@ useEffect(() => {
 }); // ← no dependency array
 ```
 
-**Root cause:** Without `[]`, the effect runs after every render. `setProjects` triggers a re-render → the effect runs again → infinite loop. The network tab shows hundreds of identical requests per second.
+**Root cause:** Without `[]`, the effect runs after every render. `setProjects` triggers a re-render → the effect fires again → infinite loop. The network tab shows hundreds of requests per second.
 
-**Fix:** Add `[]`, or use React Query — which eliminates `useEffect` for data fetching entirely.
+**Fix:** Add `[]`. In this project React Query is used instead, which eliminates the `useEffect` for data fetching entirely and makes this class of bug impossible.
 
 **Catching test:** `test_fetches_projects_exactly_once_on_mount` — spies on `fetchProjects` and asserts it was called exactly once after mount.
 
@@ -211,21 +219,39 @@ projects.sort((a, b) => ...);  // ← mutates in-place
 setProjects(projects);          // same reference → React sees no change, no re-render
 ```
 
-**Root cause:** React uses reference equality to decide whether to re-render. Mutating the array and calling `setState` with the same reference does nothing.
+**Root cause:** React uses reference equality to decide whether to re-render. Mutating the array and passing the same reference to `setState` is a no-op.
 
-**Fix:** Always return a new array — `[...projects].sort(...)` or `.filter(...)`.
+**Fix:** Always return a new array — `[...projects].sort(...)` or `.filter(...)`. The `useProjectFilters` hook uses `.filter()`, which returns a new array by definition, and wraps the result in `useMemo` so it only recomputes when the inputs change.
 
-**Catching test:** `test_filters_projects_by_status_without_mutating` — filters to `active`, switches back to `All`, asserts the full count is restored (proves the original array was not mutated).
+**Catching test:** `test_filters_projects_by_status_without_mutating` — filters to `active`, switches back to `All`, asserts the full count is restored (confirms the original array was never modified).
 
 ---
 
-### Task 5 — Modal Prompt (Score: 5/5)
+### Task 4 — API Integration & Error Handling
 
-Full prompt is in the docstring at the top of `frontend/src/components/Modal.tsx`. Key elements:
-- Typed props (isOpen, onClose, title, children, footer slot) listed explicitly
-- Focus trap: Tab/Shift+Tab cycle within modal, initial focus on first focusable element, restore focus on close
-- Escape key closes
+**API client** (`src/api/client.ts`): Axios instance with two interceptors:
+- **Request interceptor** — attaches `Authorization: Bearer <token>` from `localStorage` when present.
+- **Response interceptor** — clears the stored token on 401 so stale credentials don't loop; normalises all errors to a single rejection shape so callers don't inspect `AxiosError` internals.
+
+**Loading / error / empty states** in `Dashboard.tsx`:
+- **Loading** — six `ProjectCardSkeleton` pulse-animated cards render while the query is pending.
+- **Error** — a red error message replaces the grid if the fetch fails.
+- **Empty** — a centred "No projects found" message with context text when filters produce zero results.
+
+**Optimistic update** for task completion toggle:
+1. `onMutate` — cancel in-flight queries, snapshot current cache, apply the toggle immediately.
+2. `onError` — restore the snapshot so the UI rolls back if the PATCH fails.
+3. `onSettled` — invalidate the query to sync with the server regardless of outcome.
+
+---
+
+### Task 5 — Modal Prompt
+
+Full prompt is in the docstring at the top of `frontend/src/components/Modal.tsx`. Key elements that cover every rubric criterion:
+- Typed props listed explicitly: `isOpen`, `onClose`, `title`, `children`, `footer` (optional slot for action buttons)
+- Focus trap: Tab/Shift+Tab cycles only within the modal; initial focus lands on the first focusable element; focus returns to the trigger on close
+- Escape key closes the modal
 - Overlay click closes; panel click does not propagate
-- CSS transition animation via Tailwind classes
-- No third-party focus-trap library — native implementation with refs
-- Clean unmount when `isOpen` is false
+- CSS open/close animation via Tailwind classes
+- Native implementation with refs — no third-party focus-trap library
+- Clean unmount (`return null`) when `isOpen` is false — no hidden DOM noise

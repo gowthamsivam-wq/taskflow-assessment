@@ -10,6 +10,7 @@ export interface Project {
   created_at: string;
   updated_at: string;
   task_count: number;
+  completed_task_count: number;
 }
 
 export interface Task {
