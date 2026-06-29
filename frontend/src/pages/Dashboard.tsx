@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { fetchProjects, fetchTasks, updateTask } from '@/api/projects';
 import { useFilterStore } from '@/store/filterStore';
@@ -17,6 +18,9 @@ const STATUS_FILTERS: { label: string; value: ProjectStatus | 'all' }[] = [
 ];
 
 export default function Dashboard() {
+  const { pathname } = useLocation();
+  const pageTitle = pathname === '/projects' ? 'Projects' : 'Dashboard';
+
   // Client UI state lives in Zustand — persists across navigations without re-fetching
   const { status, search, setStatus, setSearch } = useFilterStore();
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
@@ -73,7 +77,7 @@ export default function Dashboard() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">Dashboard</h1>
+      <h1 className="text-2xl font-bold text-gray-900 mb-6">{pageTitle}</h1>
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3 mb-6">
