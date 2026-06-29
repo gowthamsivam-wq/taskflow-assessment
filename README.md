@@ -61,6 +61,9 @@ Copy `backend/.env.example` to `backend/.env` and fill in values for non-local e
 
 ### Task 2 — REST API
 
+**Prompt used:**
+> "Using the Project and Task models already defined, scaffold a full DRF REST API. Use ModelViewSet + DefaultRouter for both resources. ProjectViewSet.get_queryset() must annotate each project with task_count (Count), completed_task_count (Count with Q filter), and latest_due (Max) — all three in a single query. Add a custom @action at detail=True, url_path='summary' that returns project_id, name, total_tasks, completed_tasks. TaskViewSet must support filtering via django-filter on project (integer), priority (exact integer — use NumberFilter not CharFilter), and is_complete (boolean). TaskSerializer must return priority_display via get_priority_display. Set PAGE_SIZE=20, OrderingFilter, and SearchFilter globally in REST_FRAMEWORK settings. Register both viewsets with a router and include under /api/."
+
 **Design decisions:**
 - `ProjectViewSet.get_queryset()` annotates `task_count`, `completed_task_count`, and `latest_due` — all three in a single query, no extra round-trips.
 - `TaskSerializer` deliberately returns `project` as a flat ID (not a nested object). Nesting the full `ProjectSerializer` would waste bandwidth on list endpoints where only the ID is needed; callers that need project detail hit `/api/projects/{id}/` directly. The `priority_display` field uses `source='get_priority_display'` to surface the human-readable label alongside the integer value without a separate query.
@@ -73,6 +76,11 @@ Copy `backend/.env.example` to `backend/.env` and fill in values for non-local e
 ---
 
 ### Task 3 — Debug & Refactor (Bug Analysis)
+
+**Prompt used to identify bugs:**
+> "Here is a Django REST Framework serializer and filter class. Identify all bugs that would cause API errors in production and explain the root cause of each. For each bug: show the buggy code pattern, explain why it fails, show the corrected version, and write a Django test that would catch the regression."
+
+**Bugs surfaced and fixed:**
 
 #### Bug #1 — Missing FK Validation on Task Creation
 
@@ -210,6 +218,9 @@ Copy `frontend/.env.example` to `frontend/.env.local` to point at a real backend
 
 ### Task 2 — Components & State Management: React Query + Zustand
 
+**Prompt used:**
+> "Scaffold a Dashboard page for a project management app in React 19 + TypeScript. Use React Query v5 for all server state (projects list, tasks list). Use Zustand v5 for client UI state (status filter, search string). Keep them strictly separated — React Query owns anything that comes from the network, Zustand owns anything that is purely UI state. Create a custom hook useProjectFilters that reads from the Zustand store and returns a useMemo-filtered project array without touching the original cache. Build a ProjectCard component that accepts a Project prop and displays name, status badge, description, and a progress bar showing completed_task_count / task_count. Include loading skeletons (pulse animation), an error state, and an empty state when filters return zero results."
+
 **Two state managers, two jobs — neither is redundant.**
 
 | State type | Tool | Reason |
@@ -222,6 +233,11 @@ React Query owns everything that comes from the network. Zustand owns the filter
 ---
 
 ### Task 3 — Bug Analysis
+
+**Prompt used to identify bugs:**
+> "Here are two React bugs in a project list component. Bug 1: a useEffect with no dependency array that fetches data — explain why this causes an infinite loop, what the correct fix is, and write a Vitest + React Testing Library test that catches it. Bug 2: a sort or filter that mutates the state array in-place before calling setState — explain why React doesn't re-render, what the immutable fix is, and write a test that verifies the original list is not modified."
+
+**Bugs surfaced and fixed:**
 
 #### Bug #1 — Missing `useEffect` Dependency Array
 
